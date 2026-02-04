@@ -12,6 +12,25 @@ of te testen zijn.
 python -m artificial_life.runner
 ```
 
+### Clean-slate setup (stap voor stap)
+1. Clone de repo:
+   ```bash
+   git clone <repo-url>
+   cd Artificial-Life
+   ```
+2. Maak een virtuele omgeving:
+   ```bash
+   python -m venv .venv
+   ```
+3. Activeer de omgeving:
+   ```bash
+   source .venv/bin/activate
+   ```
+4. Run de simulatie:
+   ```bash
+   python -m artificial_life.runner
+   ```
+
 # Versie 1 — Core mechanics brainstorm
 
 ## 1. Tijd & simulatie-flow (superbelangrijk)

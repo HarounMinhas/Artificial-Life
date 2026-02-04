@@ -27,9 +27,8 @@ python -m artificial_life.runner
    ```
 5. Activeer de omgeving:
    ```bash
-   source .venv/bin/activate
-   ```
-   > Gebruik je Windows: `.\.venv\Scripts\activate`
+   .\.venv\Scripts\Activate.ps1
+
 6. Start de simulatie:
    ```bash
    python -m artificial_life.runner

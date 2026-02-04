@@ -12,6 +12,35 @@ of te testen zijn.
 python -m artificial_life.runner
 ```
 
+### Starten in Visual Studio Code (stap voor stap, terminal)
+1. Open de repo in VS Code:
+   - **File → Open Folder…** en kies `Artificial-Life`
+2. Open de ingebouwde terminal:
+   - **Terminal → New Terminal**
+3. Controleer je Python-versie (3.10+ aangeraden):
+   ```bash
+   python --version
+   ```
+4. Maak een virtuele omgeving:
+   ```bash
+   python -m venv .venv
+   ```
+5. Activeer de omgeving:
+   ```bash
+   source .venv/bin/activate
+   ```
+   > Gebruik je Windows: `.\.venv\Scripts\activate`
+6. Start de simulatie:
+   ```bash
+   python -m artificial_life.runner
+   ```
+7. Wat je hoort te zien (headless):
+   - Elke ~30 ticks een statusregel zoals:
+     ```
+     Tick 30: agents=10 food=18
+     ```
+   - **Geen GUI** in V1: alleen tekstoutput in de terminal.
+
 ### Clean-slate setup (stap voor stap)
 1. Clone de repo:
    ```bash
@@ -30,6 +59,27 @@ python -m artificial_life.runner
    ```bash
    python -m artificial_life.runner
    ```
+
+### Als er “niets gebeurt”
+De V1-implementatie is **headless**. Er is geen visuele output, alleen periodieke
+statusregels in de terminal. Zie je geen regels?
+- Check of je **venv geactiveerd** is (`(.venv)` in je prompt).
+- Check of je **in de repo root** zit (`Artificial-Life`).
+- Run nogmaals:
+  ```bash
+  python -m artificial_life.runner
+  ```
+
+### Wat ontbreekt of nog niet werkt voor V1 (code-check)
+Op basis van de huidige code zijn dit de grootste gaps t.o.v. de V1-brainstorm:
+- **Zicht, tast aanwezig** maar **gehoor en reuk ontbreken** (geen auditieve/olfactorische percepties).
+- **Fight/flight/freeze**: alleen `flee`, `attack`, `rest` en `patrol` zijn aanwezig; geen echte freeze-logica.
+- **Schade & pijn**: er is geen damage-model of pijn-opbouw bij botsing/aanval.
+- **Territorium**: enkel stress-reductie binnen eigen territorium; geen markeren of indringer-effects.
+- **Sociale interactie/communicatie** ontbreekt volledig.
+- **Leren/associaties** is niet geactiveerd (memory bestaat maar wordt niet gevuld/afgebouwd).
+- **Dood** en bijbehorende effecten ontbreken.
+- **Debug/visualisatie** is nog niet gestart; er is geen UI, overlays of input (muisklik/keys).
 
 # Versie 1 — Core mechanics brainstorm
 

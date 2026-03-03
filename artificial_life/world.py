@@ -218,6 +218,7 @@ class World:
         agent.llm.decision_ready_tick = self.state.tick
         agent.llm.decision_expires_tick = self.state.tick + ttl
         agent.llm.next_allowed_tick = self.state.tick + self.config.llm_cooldown_ticks
+        self._apply_llm_emotion_updates(agent, result.decision)
 
     def _submit_llm_requests(self, perceptions_map: dict[int, List[Perception]]) -> None:
         if not any(agent.llm.enabled for agent in self.state.agents):
@@ -266,6 +267,8 @@ class World:
             "tick": self.state.tick,
             "agent_id": agent.entity_id,
             "state": {
+                "hp": round(agent.hp, 3),
+                "intent": agent.current_intent,
                 "stress": round(agent.emotions.stress, 3),
                 "fear": round(agent.emotions.fear, 3),
                 "pain": round(agent.emotions.pain, 3),
@@ -317,6 +320,22 @@ class World:
         agent.current_intent = intent
         self.state.llm_used += 1
         return Decision(intent=intent, target_position=target_position)
+
+    def _apply_llm_emotion_updates(self, agent: Agent, decision: dict) -> None:
+        if not isinstance(decision, dict):
+            return
+        emotion_map = {
+            "stress": ("stress", 0.0, 10.0),
+            "fear": ("fear", 0.0, 10.0),
+            "aggr": ("aggression", 0.0, 10.0),
+            "aggression": ("aggression", 0.0, 10.0),
+            "energy": ("energy", 0.0, 8.0),
+        }
+        for key, (attr_name, lower, upper) in emotion_map.items():
+            if key not in decision:
+                continue
+            value = self._safe_float(decision.get(key), default=getattr(agent.emotions, attr_name))
+            setattr(agent.emotions, attr_name, max(lower, min(value, upper)))
 
     def _extract_llm_decision(self, decision: object) -> dict | None:
         if not isinstance(decision, dict):

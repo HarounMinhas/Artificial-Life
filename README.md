@@ -662,5 +662,8 @@ wordt die tijdelijk gebruikt als intent-override.
 - Endpoint: `http://127.0.0.1:11434/api/generate`
 - Model default: `llama3.2:1b`
 - Prompt forceert JSON-only output
+- LLM-input bevat nu ook `hp`, `energy`, `stress`, `fear`, `aggression` en huidige `intent`
+- Prompt legt kort uit hoe deze parameters gedrag beïnvloeden; `hp` blijft read-only
+- LLM kan direct `intent`, `stress`, `fear`, `aggr/aggression` (en optioneel `energy`) teruggeven om state instant te updaten
 - Parser probeert ruwe JSON te extraheren als model extra tekst terugstuurt
 - Bij timeout/fout/ongeldige JSON valt agent automatisch terug op score-based gedrag

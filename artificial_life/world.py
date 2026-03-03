@@ -2,15 +2,22 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass, field
-from typing import List
+from dataclasses import dataclass, field, replace
+from typing import List, Iterable
 
 from .config import SimulationConfig
 from .entities import Agent, AgentLLMState, Entity, EntityType, Food, SocialBond, Territory
 from .llm_bridge import AsyncLLMDecisionBroker, LLMDecisionResponse
 from .math_utils import Vec2, angle_to_vector
 from .perception import Perception, PerceptionType
-from .strategies import ALLOWED_INTENTS, BasicEmotionStrategy, BasicPerceptionStrategy, Decision, MovementActionStrategy, ScoreBasedDecisionStrategy
+from .strategies import (
+    ALLOWED_INTENTS,
+    BasicEmotionStrategy,
+    BasicPerceptionStrategy,
+    Decision,
+    MovementActionStrategy,
+    ScoreBasedDecisionStrategy,
+)
 
 
 @dataclass
@@ -213,7 +220,7 @@ class World:
         agent.llm.next_allowed_tick = self.state.tick + self.config.llm_cooldown_ticks
 
     def _submit_llm_requests(self, perceptions_map: dict[int, List[Perception]]) -> None:
-        if not self.config.llm_enabled:
+        if not any(agent.llm.enabled for agent in self.state.agents):
             return
         for agent in self.state.agents:
             if not agent.llm.enabled:
@@ -279,7 +286,7 @@ class World:
             decisions[agent.entity_id] = self._resolve_llm_decision(agent, base_decision)
 
     def _resolve_llm_decision(self, agent: Agent, base: Decision) -> Decision:
-        if not self.config.llm_enabled or not agent.llm.enabled:
+        if not agent.llm.enabled:
             return base
         raw = agent.llm.decision
         if raw is None:
@@ -307,6 +314,12 @@ class World:
         self.state.llm_used += 1
         return Decision(intent=intent, target_position=target_position)
 
+    def _agent_llm_default_enabled(self) -> bool:
+        return self.config.llm_enabled
+
+    def _iter_agents(self) -> Iterable[Agent]:
+        return self.state.agents
+
     def set_agent_llm_enabled(self, agent_id: int, enabled: bool) -> None:
         agent = self._agent_by_id(agent_id)
         if agent is None:
@@ -320,9 +333,14 @@ class World:
             agent.llm.decision = None
 
     def set_global_llm_enabled(self, enabled: bool) -> None:
-        self.config = type(self.config)(**{**self.config.__dict__, "llm_enabled": enabled})
-        for agent in self.state.agents:
+        self.config = replace(self.config, llm_enabled=enabled)
+
+    def set_all_agents_llm_enabled(self, enabled: bool) -> None:
+        for agent in self._iter_agents():
             self.set_agent_llm_enabled(agent.entity_id, enabled)
+
+    def apply_llm_default_to_all_agents(self) -> None:
+        self.set_all_agents_llm_enabled(self._agent_llm_default_enabled())
 
     def _agent_by_id(self, agent_id: int) -> Agent | None:
         for agent in self.state.agents:

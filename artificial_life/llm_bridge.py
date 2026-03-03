@@ -22,14 +22,14 @@ class LLMDecisionResponse:
 
 class OllamaPromptBuilder:
     def build(self, payload: dict[str, Any]) -> str:
+        compact_payload = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
         return (
-            "Je bent een beslis-module voor een artificieel wezen. "
-            "Geef ALLEEN geldige JSON terug, zonder markdown of uitleg. "
-            "Toegestane intent: eat, attack, flee, freeze, patrol, rest. "
-            "Schema: "
-            '{"intent":"...","confidence":0.0,"ttl_ticks":1,"target":{"x":0.0,"y":0.0}|null,"reason":"kort"}. '
-            "Gebruik alleen informatie uit de input. "
-            f"INPUT={json.dumps(payload, separators=(',', ':'))}"
+            "Je bent een beslis-module voor een artificieel wezen.\n"
+            "Geef ALLEEN een geldige JSON object terug, zonder markdown of extra tekst.\n"
+            "Toegestane intent: eat, attack, flee, freeze, patrol, rest.\n"
+            "Gebruik exact dit schema: "
+            "{\"intent\":\"...\",\"confidence\":0.0,\"ttl_ticks\":1,\"target\":{\"x\":0.0,\"y\":0.0} of null,\"reason\":\"kort\"}.\n"
+            "INPUT_JSON=" + compact_payload
         )
 
 
@@ -76,8 +76,13 @@ class OllamaClient:
         try:
             with request.urlopen(req, timeout=self.config.llm_timeout_seconds) as response:
                 raw = response.read().decode("utf-8")
+        except error.HTTPError as exc:
+            return None, "", f"ollama_http_error: {exc.code} {exc.reason}"
         except error.URLError as exc:
-            return None, "", f"ollama_unreachable: {exc}"
+            reason = getattr(exc, "reason", exc)
+            if isinstance(reason, TimeoutError):
+                return None, "", f"ollama_timeout: {reason}"
+            return None, "", f"ollama_unreachable: {reason}"
         except TimeoutError as exc:
             return None, "", f"ollama_timeout: {exc}"
 

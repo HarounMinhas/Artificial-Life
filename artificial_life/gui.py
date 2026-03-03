@@ -27,6 +27,7 @@ class SimulationGUI:
         self.root.minsize(980, 680)
 
         self.global_llm_enabled = tk.BooleanVar(master=self.root, value=self.config.llm_enabled)
+        self.llm_control_mode = tk.StringVar(master=self.root, value="individual")
 
         self.controls_frame = tk.Frame(self.root, bg="#1A1F2B", padx=12, pady=12)
         self.controls_frame.pack(fill="x")
@@ -94,12 +95,21 @@ class SimulationGUI:
             row=0, column=5, padx=(0, 12)
         )
 
-        ttk.Checkbutton(
+        ttk.Label(self.controls_frame, text="LLM modus:").grid(row=0, column=6, padx=(0, 4))
+        ttk.Radiobutton(
             self.controls_frame,
-            text="LLM globaal",
-            variable=self.global_llm_enabled,
-            command=self._toggle_global_llm,
-        ).grid(row=0, column=6, padx=(0, 12))
+            text="Individueel",
+            value="individual",
+            variable=self.llm_control_mode,
+            command=self._on_llm_mode_changed,
+        ).grid(row=0, column=7, padx=(0, 4))
+        ttk.Radiobutton(
+            self.controls_frame,
+            text="Alles AAN",
+            value="all_on",
+            variable=self.llm_control_mode,
+            command=self._on_llm_mode_changed,
+        ).grid(row=0, column=8, padx=(0, 12))
 
         help_text = (
             "D=debug | I=inspectie venster | Spatie=pauze | "
@@ -111,7 +121,7 @@ class SimulationGUI:
             fg="#B9C4D8",
             bg="#1A1F2B",
             font=("Consolas", 10),
-        ).grid(row=0, column=7, sticky="w")
+        ).grid(row=0, column=9, sticky="w")
 
     def run(self) -> None:
         self.reset_world()
@@ -214,7 +224,8 @@ class SimulationGUI:
     def _draw_hud(self) -> None:
         debug_text = "ON" if self.debug else "OFF"
         inspect_text = "ON" if self.inspect_mode else "OFF"
-        llm_text = "ON" if self.config.llm_enabled else "OFF"
+        llm_any_enabled = any(agent.llm.enabled for agent in self.world.state.agents)
+        llm_text = "ON" if llm_any_enabled else "OFF"
         hud = (
             f"Tick: {self.world.state.tick} | Agents: {len(self.world.state.agents)} | "
             f"Food: {len(self.world.state.foods)} | Dead: {self.world.state.dead_count} | "
@@ -290,12 +301,14 @@ class SimulationGUI:
                 )
                 card.columnconfigure(0, weight=1)
 
-                ttk.Checkbutton(
+                agent_toggle = ttk.Checkbutton(
                     card,
                     text="LLM aan voor agent",
                     variable=var,
-                    command=lambda aid=agent.entity_id, v=var: self.world.set_agent_llm_enabled(aid, v.get()),
-                ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+                    command=lambda aid=agent.entity_id, v=var: self._on_agent_llm_toggle(aid, v),
+                )
+                agent_toggle.grid(row=0, column=0, sticky="w", pady=(0, 4))
+                card._agent_toggle = agent_toggle
 
                 llm_label = tk.Label(card, bg="#111621", fg="#9FD0FF", anchor="w", justify="left")
                 llm_label.grid(row=1, column=0, sticky="ew", pady=(0, 4))
@@ -331,6 +344,14 @@ class SimulationGUI:
                 self._detail_cards[agent.entity_id] = card
 
             card.grid(row=row, column=0, sticky="ew", padx=8, pady=6)
+
+            agent_toggle = getattr(card, "_agent_toggle", None)
+            if agent_toggle is not None:
+                mode = self.llm_control_mode.get()
+                if mode == "all_on":
+                    agent_toggle.configure(state="disabled")
+                else:
+                    agent_toggle.configure(state="normal")
 
             llm_line = (
                 f"llm_state={agent.llm.thinking_state}, pending={agent.llm.pending_request_id}, "
@@ -392,8 +413,20 @@ class SimulationGUI:
             lambda _e: self.details_canvas.configure(scrollregion=self.details_canvas.bbox("all")),
         )
 
-    def _toggle_global_llm(self) -> None:
-        self.world.set_global_llm_enabled(self.global_llm_enabled.get())
+    def _on_llm_mode_changed(self) -> None:
+        all_on = self.llm_control_mode.get() == "all_on"
+        self.global_llm_enabled.set(all_on)
+        self.world.set_global_llm_enabled(all_on)
+        if all_on:
+            self.world.set_all_agents_llm_enabled(True)
+
+
+    def _on_agent_llm_toggle(self, agent_id: int, var: tk.BooleanVar) -> None:
+        if self.llm_control_mode.get() == "all_on":
+            var.set(True)
+            return
+        enabled = var.get()
+        self.world.set_agent_llm_enabled(agent_id, enabled)
 
     def toggle_debug(self, _event=None) -> None:
         self.debug = not self.debug
@@ -409,6 +442,7 @@ class SimulationGUI:
         self.initial_food_count = max(self.food_count_var.get(), 0)
         self.world.seed(agent_count=self.initial_agent_count, food_count=self.initial_food_count)
         self.world.set_global_llm_enabled(self.global_llm_enabled.get())
+        self.world.apply_llm_default_to_all_agents()
         self.selected_agent_id = None
 
     def single_step(self, _event=None) -> None:

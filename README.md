@@ -623,3 +623,44 @@ Formuleer dit als:
 - Transparante cirkels tonen territorium in debug
 
 ➡️ **Als je hier 10 minuten naar kijkt en het blijft interessant, dan zit V1 goed.**
+
+
+## LLM denkklaag (Ollama, llama3.2:1b)
+
+De simulatie ondersteunt een asynchrone lokale LLM-laag. Agents kunnen (op basis van stress/fear/pain)
+een aanvraag naar Ollama sturen. Tijdens wachten blijft standaard gedrag actief; bij een geldige response
+wordt die tijdelijk gebruikt als intent-override.
+
+### Installatie vanaf 0
+1. Python omgeving:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+2. Installeer Ollama (Linux/macOS):
+   ```bash
+   curl -fsSL https://ollama.com/install.sh | sh
+   ```
+3. Start Ollama service:
+   ```bash
+   ollama serve
+   ```
+4. Pull het model:
+   ```bash
+   ollama pull llama3.2:1b
+   ```
+5. Start de simulatie:
+   ```bash
+   python -m artificial_life.runner --mode gui
+   ```
+
+### LLM aan/uit
+- Globaal: checkbox **LLM globaal** in de hoofdtoolbar.
+- Per agent: in inspectie-window (**I**) staat per agent een checkbox **LLM aan voor agent**.
+
+### Technische notities
+- Endpoint: `http://127.0.0.1:11434/api/generate`
+- Model default: `llama3.2:1b`
+- Prompt forceert JSON-only output
+- Parser probeert ruwe JSON te extraheren als model extra tekst terugstuurt
+- Bij timeout/fout/ongeldige JSON valt agent automatisch terug op score-based gedrag

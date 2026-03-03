@@ -11,6 +11,8 @@ from .entities import Agent, Entity, EntityType
 from .math_utils import Vec2, angle_to_vector, clamp_angle_rad, vector_to_angle
 from .perception import Perception, PerceptionType
 
+ALLOWED_INTENTS = {"eat", "attack", "flee", "freeze", "patrol", "rest"}
+
 
 @dataclass
 class Decision:
@@ -110,7 +112,7 @@ class ScoreBasedDecisionStrategy(DecisionStrategy):
         self.config = config
         self.rng = rng
 
-    def decide(self, agent: Agent, perceptions: List[Perception]) -> Decision:
+    def score_intents(self, agent: Agent, perceptions: List[Perception]) -> Dict[str, float]:
         food = self._closest(perceptions, EntityType.FOOD.value)
         threat = self._closest(perceptions, EntityType.AGENT.value)
         intents: Dict[str, float] = {
@@ -124,7 +126,12 @@ class ScoreBasedDecisionStrategy(DecisionStrategy):
         if agent.emotions.stress > self.config.stress_threshold:
             intents["freeze"] += 0.8
             intents["flee"] += 0.5
+        return intents
 
+    def decide(self, agent: Agent, perceptions: List[Perception]) -> Decision:
+        food = self._closest(perceptions, EntityType.FOOD.value)
+        threat = self._closest(perceptions, EntityType.AGENT.value)
+        intents = self.score_intents(agent, perceptions)
         top_intent = max(intents, key=intents.get)
         agent.current_intent = top_intent
 

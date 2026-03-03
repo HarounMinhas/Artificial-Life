@@ -58,6 +58,7 @@ class AgentLLMState:
     thinking_state: str = "idle"
     pending_request_id: str | None = None
     last_error: str | None = None
+    last_prompt: str = ""
     last_raw_response: str = ""
     decision: dict | None = None
     decision_ready_tick: int = -1

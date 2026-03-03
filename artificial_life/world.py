@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import List
 
 from .config import SimulationConfig
-from .entities import Agent, Entity, EntityType, Food, SocialBond, Territory
+from .entities import Agent, AgentLLMState, Entity, EntityType, Food, SocialBond, Territory
 from .llm_bridge import AsyncLLMDecisionBroker, LLMDecisionResponse
 from .math_utils import Vec2, angle_to_vector
 from .perception import Perception, PerceptionType
@@ -320,6 +320,8 @@ class World:
 
     def set_global_llm_enabled(self, enabled: bool) -> None:
         self.config = type(self.config)(**{**self.config.__dict__, "llm_enabled": enabled})
+        for agent in self.state.agents:
+            self.set_agent_llm_enabled(agent.entity_id, enabled)
 
     def _agent_by_id(self, agent_id: int) -> Agent | None:
         for agent in self.state.agents:
@@ -469,6 +471,7 @@ class World:
             bias_fight=self.rng.uniform(0.2, 0.4),
             bias_flight=self.rng.uniform(0.2, 0.4),
             bias_freeze=self.rng.uniform(0.2, 0.4),
+            llm=AgentLLMState(enabled=self.config.llm_enabled),
         )
         self._next_agent_id += 1
         return agent

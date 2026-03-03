@@ -31,7 +31,7 @@ class SimulationConfig:
     relation_decay: float = 0.01
     memory_decay: float = 0.03
 
-    llm_enabled: bool = True
+    llm_enabled: bool = False
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "llama3.2:1b"
     llm_timeout_seconds: float = 1.2

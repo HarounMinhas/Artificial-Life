@@ -53,6 +53,19 @@ class MemoryAssociation:
 
 
 @dataclass
+class AgentLLMState:
+    enabled: bool = True
+    thinking_state: str = "idle"
+    pending_request_id: str | None = None
+    last_error: str | None = None
+    last_raw_response: str = ""
+    decision: dict | None = None
+    decision_ready_tick: int = -1
+    decision_expires_tick: int = -1
+    next_allowed_tick: int = 0
+
+
+@dataclass
 class Agent(Entity):
     heading: float
     speed: float
@@ -69,3 +82,4 @@ class Agent(Entity):
     hp: float = 10.0
     frozen_ticks: int = 0
     alive: bool = True
+    llm: AgentLLMState = field(default_factory=AgentLLMState)

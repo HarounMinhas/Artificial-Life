@@ -30,3 +30,16 @@ class SimulationConfig:
 
     relation_decay: float = 0.01
     memory_decay: float = 0.03
+
+    llm_enabled: bool = True
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "llama3.2:1b"
+    llm_timeout_seconds: float = 1.2
+    llm_temperature: float = 0.1
+    llm_max_inflight: int = 3
+    llm_cooldown_ticks: int = 20
+    llm_min_confidence: float = 0.35
+    llm_trigger_stress: float = 2.8
+    llm_trigger_fear: float = 1.4
+    llm_trigger_pain: float = 0.8
+    llm_response_ttl_ticks: int = 8

@@ -20,11 +20,12 @@ class SimulationGUI:
         self.inspect_mode = False
         self.paused = False
         self.selected_agent_id: int | None = None
+        self.global_llm_enabled = tk.BooleanVar(value=self.config.llm_enabled)
 
         self.root = tk.Tk()
         self.root.title("Artificial Life V1")
-        self.root.geometry("1200x800")
-        self.root.minsize(900, 650)
+        self.root.geometry("1250x820")
+        self.root.minsize(980, 680)
 
         self.controls_frame = tk.Frame(self.root, bg="#1A1F2B", padx=12, pady=12)
         self.controls_frame.pack(fill="x")
@@ -42,7 +43,9 @@ class SimulationGUI:
         self.food_count_var = tk.IntVar(value=self.initial_food_count)
 
         self.details_window: tk.Toplevel | None = None
-        self.details_text: tk.Text | None = None
+        self.details_canvas: tk.Canvas | None = None
+        self.details_list_frame: tk.Frame | None = None
+        self._detail_rows: dict[int, tk.BooleanVar] = {}
 
         self._build_controls()
 
@@ -85,14 +88,24 @@ class SimulationGUI:
             row=0, column=5, padx=(0, 12)
         )
 
-        help_text = "D=debug | I=inspectie venster | Spatie=pauze | LMB=eten | RMB=spawn agent | MMB=select agent"
+        ttk.Checkbutton(
+            self.controls_frame,
+            text="LLM globaal",
+            variable=self.global_llm_enabled,
+            command=self._toggle_global_llm,
+        ).grid(row=0, column=6, padx=(0, 12))
+
+        help_text = (
+            "D=debug | I=inspectie venster | Spatie=pauze | "
+            "LMB=eten | RMB=spawn agent | MMB=select agent"
+        )
         tk.Label(
             self.controls_frame,
             text=help_text,
             fg="#B9C4D8",
             bg="#1A1F2B",
             font=("Consolas", 10),
-        ).grid(row=0, column=6, sticky="w")
+        ).grid(row=0, column=7, sticky="w")
 
     def run(self) -> None:
         self.reset_world()
@@ -154,7 +167,10 @@ class SimulationGUI:
             blue = int(140 * energy + 50)
             color = f"#{red:02x}4a{blue:02x}"
             width = 2 if self.selected_agent_id == agent.entity_id else 1
-            outline = "#F2F2F2" if self.selected_agent_id == agent.entity_id else "#0C0C0C"
+            if self.config.llm_enabled and agent.llm.enabled:
+                outline = "#7ED6FF" if self.selected_agent_id != agent.entity_id else "#F2F2F2"
+            else:
+                outline = "#0C0C0C" if self.selected_agent_id != agent.entity_id else "#F2F2F2"
             self.canvas.create_oval(p.x - r, p.y - r, p.x + r, p.y + r, fill=color, outline=outline, width=width)
 
             dx = math.cos(agent.heading) * self._scale_radius(10)
@@ -192,21 +208,29 @@ class SimulationGUI:
     def _draw_hud(self) -> None:
         debug_text = "ON" if self.debug else "OFF"
         inspect_text = "ON" if self.inspect_mode else "OFF"
+        llm_text = "ON" if self.config.llm_enabled else "OFF"
         hud = (
             f"Tick: {self.world.state.tick} | Agents: {len(self.world.state.agents)} | "
             f"Food: {len(self.world.state.foods)} | Dead: {self.world.state.dead_count} | "
-            f"Debug: {debug_text} | Inspect: {inspect_text} | Paused: {self.paused}"
+            f"Debug: {debug_text} | Inspect: {inspect_text} | Paused: {self.paused} | LLM: {llm_text}"
         )
         self.canvas.create_text(10, 10, anchor="nw", fill="#F2F2F2", text=hud, font=("Consolas", 11))
+
+        llm_stats = (
+            f"LLM submitted={self.world.state.llm_submitted} completed={self.world.state.llm_completed} "
+            f"failed={self.world.state.llm_failed} used={self.world.state.llm_used}"
+        )
+        self.canvas.create_text(10, 30, anchor="nw", fill="#9FD0FF", text=llm_stats, font=("Consolas", 10))
 
         selected = self._selected_agent()
         if selected is not None:
             info = (
                 f"Selected {selected.entity_id} | intent={selected.current_intent} | "
                 f"energy={selected.emotions.energy:.2f} stress={selected.emotions.stress:.2f} "
-                f"fear={selected.emotions.fear:.2f} aggr={selected.emotions.aggression:.2f} hp={selected.hp:.2f}"
+                f"fear={selected.emotions.fear:.2f} aggr={selected.emotions.aggression:.2f} hp={selected.hp:.2f} "
+                f"| llm={selected.llm.enabled} state={selected.llm.thinking_state}"
             )
-            self.canvas.create_text(10, 30, anchor="nw", fill="#F8D66D", text=info, font=("Consolas", 10))
+            self.canvas.create_text(10, 50, anchor="nw", fill="#F8D66D", text=info, font=("Consolas", 10))
 
     def _selected_agent(self):
         if self.selected_agent_id is None:
@@ -222,21 +246,58 @@ class SimulationGUI:
             if self.details_window is not None and self.details_window.winfo_exists():
                 self.details_window.destroy()
             self.details_window = None
-            self.details_text = None
+            self.details_canvas = None
+            self.details_list_frame = None
+            self._detail_rows.clear()
             return
 
         if self.details_window is None or not self.details_window.winfo_exists():
-            self.details_window = tk.Toplevel(self.root)
-            self.details_window.title("Agent inspectie")
-            self.details_window.geometry("560x700")
-            self.details_text = tk.Text(self.details_window, wrap="word", bg="#0E1118", fg="#E4EAF3")
-            self.details_text.pack(fill="both", expand=True)
+            self._create_details_window()
 
-        if self.details_text is None:
+        if self.details_list_frame is None or self.details_canvas is None:
             return
 
-        lines: list[str] = []
+        for child in self.details_list_frame.winfo_children():
+            child.destroy()
+
+        row = 0
         for agent in sorted(self.world.state.agents, key=lambda a: a.entity_id):
+            var = self._detail_rows.get(agent.entity_id)
+            if var is None:
+                var = tk.BooleanVar(value=agent.llm.enabled)
+                self._detail_rows[agent.entity_id] = var
+            else:
+                var.set(agent.llm.enabled)
+
+            card = tk.LabelFrame(
+                self.details_list_frame,
+                text=f"Agent #{agent.entity_id}",
+                bg="#111621",
+                fg="#DCE6F7",
+                padx=6,
+                pady=6,
+                labelanchor="nw",
+            )
+            card.grid(row=row, column=0, sticky="ew", padx=8, pady=6)
+            card.columnconfigure(0, weight=1)
+
+            ttk.Checkbutton(
+                card,
+                text="LLM aan voor agent",
+                variable=var,
+                command=lambda aid=agent.entity_id, v=var: self.world.set_agent_llm_enabled(aid, v.get()),
+            ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+
+            llm_line = (
+                f"llm_state={agent.llm.thinking_state}, pending={agent.llm.pending_request_id}, "
+                f"last_error={agent.llm.last_error or '-'}"
+            )
+            tk.Label(card, text=llm_line, bg="#111621", fg="#9FD0FF", anchor="w", justify="left").grid(
+                row=1,
+                column=0,
+                sticky="ew",
+            )
+
             status = "angstig" if agent.emotions.fear > 1.2 else "kalm"
             if agent.current_intent == "eat":
                 status = "zoeken naar eten"
@@ -247,39 +308,59 @@ class SimulationGUI:
             elif agent.current_intent == "freeze":
                 status = "bevroren"
 
-            lines.append(
-                f"Agent #{agent.entity_id} | status={status} | intent={agent.current_intent} | hp={agent.hp:.2f}"
+            lines = [
+                f"status={status} intent={agent.current_intent} hp={agent.hp:.2f}",
+                (
+                    "emoties: "
+                    f"energy={agent.emotions.energy:.2f}, stress={agent.emotions.stress:.2f}, fear={agent.emotions.fear:.2f}, "
+                    f"pain={agent.emotions.pain:.2f}, aggression={agent.emotions.aggression:.2f}, overload={agent.emotions.stimulus_overload:.2f}"
+                ),
+                (
+                    "beweging: "
+                    f"pos=({agent.position.x:.1f}, {agent.position.y:.1f}), heading={agent.heading:.2f}, "
+                    f"speed={agent.speed:.2f}/{agent.max_speed:.2f}, frozen_ticks={agent.frozen_ticks}"
+                ),
+                (
+                    "territory: "
+                    f"center=({agent.territory.center.x:.1f}, {agent.territory.center.y:.1f}), "
+                    f"radius={agent.territory.radius:.1f}, strength={agent.territory.strength:.2f}"
+                ),
+            ]
+            tk.Label(card, text="\n".join(lines), bg="#111621", fg="#E4EAF3", anchor="w", justify="left").grid(
+                row=2,
+                column=0,
+                sticky="ew",
             )
-            lines.append(
-                "  emoties: "
-                f"energy={agent.emotions.energy:.2f}, stress={agent.emotions.stress:.2f}, fear={agent.emotions.fear:.2f}, "
-                f"pain={agent.emotions.pain:.2f}, aggression={agent.emotions.aggression:.2f}, overload={agent.emotions.stimulus_overload:.2f}"
-            )
-            lines.append(
-                "  beweging: "
-                f"pos=({agent.position.x:.1f}, {agent.position.y:.1f}), heading={agent.heading:.2f}, "
-                f"speed={agent.speed:.2f}/{agent.max_speed:.2f}, frozen_ticks={agent.frozen_ticks}"
-            )
-            lines.append(
-                "  parameters: "
-                f"fight_bias={agent.bias_fight:.2f}, flight_bias={agent.bias_flight:.2f}, freeze_bias={agent.bias_freeze:.2f}"
-            )
-            lines.append(
-                "  territory: "
-                f"center=({agent.territory.center.x:.1f}, {agent.territory.center.y:.1f}), "
-                f"radius={agent.territory.radius:.1f}, strength={agent.territory.strength:.2f}"
-            )
-            lines.append(
-                "  geheugen/social: "
-                f"place_intensity={agent.memory.place_intensity:.2f}, relations={len(agent.relationships)}, "
-                f"entity_memories={len(agent.memory.entity_emotions)}"
-            )
-            lines.append("-" * 88)
+            row += 1
 
-        self.details_text.config(state="normal")
-        self.details_text.delete("1.0", tk.END)
-        self.details_text.insert("1.0", "\n".join(lines) if lines else "Geen actieve agents")
-        self.details_text.config(state="disabled")
+        self.details_canvas.update_idletasks()
+        self.details_canvas.configure(scrollregion=self.details_canvas.bbox("all"))
+
+    def _create_details_window(self) -> None:
+        self.details_window = tk.Toplevel(self.root)
+        self.details_window.title("Agent inspectie")
+        self.details_window.geometry("700x720")
+
+        container = tk.Frame(self.details_window, bg="#0E1118")
+        container.pack(fill="both", expand=True)
+
+        self.details_canvas = tk.Canvas(container, bg="#0E1118", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=self.details_canvas.yview)
+        self.details_canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side="right", fill="y")
+        self.details_canvas.pack(side="left", fill="both", expand=True)
+
+        self.details_list_frame = tk.Frame(self.details_canvas, bg="#0E1118")
+        self.details_canvas.create_window((0, 0), window=self.details_list_frame, anchor="nw")
+
+        self.details_list_frame.bind(
+            "<Configure>",
+            lambda _e: self.details_canvas.configure(scrollregion=self.details_canvas.bbox("all")),
+        )
+
+    def _toggle_global_llm(self) -> None:
+        self.world.set_global_llm_enabled(self.global_llm_enabled.get())
 
     def toggle_debug(self, _event=None) -> None:
         self.debug = not self.debug
@@ -294,6 +375,7 @@ class SimulationGUI:
         self.initial_agent_count = max(self.agent_count_var.get(), 1)
         self.initial_food_count = max(self.food_count_var.get(), 0)
         self.world.seed(agent_count=self.initial_agent_count, food_count=self.initial_food_count)
+        self.world.set_global_llm_enabled(self.global_llm_enabled.get())
         self.selected_agent_id = None
 
     def single_step(self, _event=None) -> None:
@@ -309,6 +391,7 @@ class SimulationGUI:
     def right_click(self, event) -> None:
         click_pos = self._screen_to_world(event.x, event.y)
         agent = self.world.spawn_agent(click_pos)
+        self.world.set_agent_llm_enabled(agent.entity_id, self.global_llm_enabled.get())
         self.selected_agent_id = agent.entity_id
 
     def middle_click(self, event) -> None:

@@ -7,15 +7,10 @@ from typing import List
 
 from .config import SimulationConfig
 from .entities import Agent, Entity, EntityType, Food, SocialBond, Territory
+from .llm_bridge import AsyncLLMDecisionBroker, LLMDecisionResponse
 from .math_utils import Vec2, angle_to_vector
 from .perception import Perception, PerceptionType
-from .strategies import (
-    BasicEmotionStrategy,
-    BasicPerceptionStrategy,
-    Decision,
-    MovementActionStrategy,
-    ScoreBasedDecisionStrategy,
-)
+from .strategies import ALLOWED_INTENTS, BasicEmotionStrategy, BasicPerceptionStrategy, Decision, MovementActionStrategy, ScoreBasedDecisionStrategy
 
 
 @dataclass
@@ -42,6 +37,10 @@ class WorldState:
     sounds: List[SoundEvent] = field(default_factory=list)
     dead_count: int = 0
     tick: int = 0
+    llm_submitted: int = 0
+    llm_completed: int = 0
+    llm_failed: int = 0
+    llm_used: int = 0
 
 
 class World:
@@ -53,6 +52,7 @@ class World:
         self.emotion_strategy = BasicEmotionStrategy()
         self.decision_strategy = ScoreBasedDecisionStrategy(config, self.rng)
         self.action_strategy = MovementActionStrategy(self.rng)
+        self.llm_broker = AsyncLLMDecisionBroker(config)
         self._next_agent_id = 0
         self._next_food_id = 1000
 
@@ -60,10 +60,7 @@ class World:
         self.state = WorldState()
         self._next_agent_id = 0
         self._next_food_id = 1000
-        self.state.agents = [
-            self._new_agent(self._random_position())
-            for _ in range(agent_count)
-        ]
+        self.state.agents = [self._new_agent(self._random_position()) for _ in range(agent_count)]
         self.state.foods = [
             Food(
                 entity_id=self._new_food_id(),
@@ -94,9 +91,12 @@ class World:
         entities = self._all_entities()
         perceptions_map: dict[int, List[Perception]] = {}
         decisions: dict[int, Decision] = {}
+
         self._update_clouds()
         self._perceive(entities, perceptions_map)
         self._update_emotions(perceptions_map)
+        self._collect_llm_results()
+        self._submit_llm_requests(perceptions_map)
         self._decide(perceptions_map, decisions)
         self._act(decisions)
         self._interact(decisions)
@@ -184,11 +184,148 @@ class World:
                 agent.memory.place_emotion = agent.position
                 agent.memory.place_intensity = min(agent.memory.place_intensity + 0.1, 1.0)
 
+    def _collect_llm_results(self) -> None:
+        for result in self.llm_broker.collect_ready():
+            self._apply_llm_result(result)
+
+    def _apply_llm_result(self, result: LLMDecisionResponse) -> None:
+        agent = self._agent_by_id(result.agent_id)
+        if agent is None:
+            return
+        agent.llm.pending_request_id = None
+        agent.llm.thinking_state = "idle"
+        agent.llm.last_raw_response = result.raw_response
+        self.state.llm_completed += 1
+        if result.error:
+            agent.llm.last_error = result.error
+            self.state.llm_failed += 1
+            return
+        agent.llm.last_error = None
+        if result.decision is None:
+            self.state.llm_failed += 1
+            return
+        ttl = int(result.decision.get("ttl_ticks", self.config.llm_response_ttl_ticks))
+        ttl = max(1, min(ttl, self.config.llm_response_ttl_ticks))
+        agent.llm.decision = result.decision
+        agent.llm.decision_ready_tick = self.state.tick
+        agent.llm.decision_expires_tick = self.state.tick + ttl
+        agent.llm.next_allowed_tick = self.state.tick + self.config.llm_cooldown_ticks
+
+    def _submit_llm_requests(self, perceptions_map: dict[int, List[Perception]]) -> None:
+        if not self.config.llm_enabled:
+            return
+        for agent in self.state.agents:
+            if not agent.llm.enabled:
+                continue
+            if agent.llm.pending_request_id is not None:
+                continue
+            if self.state.tick < agent.llm.next_allowed_tick:
+                continue
+            if not self.llm_broker.can_submit():
+                return
+            if not self._should_query_llm(agent):
+                continue
+            payload = self._build_llm_payload(agent, perceptions_map.get(agent.entity_id, []))
+            request_id = self.llm_broker.submit(agent.entity_id, payload)
+            if request_id is None:
+                return
+            agent.llm.pending_request_id = request_id
+            agent.llm.thinking_state = "pending"
+            agent.llm.last_error = None
+            self.state.llm_submitted += 1
+
+    def _should_query_llm(self, agent: Agent) -> bool:
+        return (
+            agent.emotions.stress >= self.config.llm_trigger_stress
+            or agent.emotions.fear >= self.config.llm_trigger_fear
+            or agent.emotions.pain >= self.config.llm_trigger_pain
+        )
+
+    def _build_llm_payload(self, agent: Agent, perceptions: list[Perception]) -> dict:
+        intents = self.decision_strategy.score_intents(agent, perceptions)
+        top_perceptions = [
+            {
+                "type": p.perception_type.value,
+                "source_type": p.source_type,
+                "distance": round(p.estimated_distance, 2),
+                "threat": round(p.threat, 2),
+                "intensity": round(p.intensity, 2),
+                "signal": p.signal,
+            }
+            for p in perceptions[:3]
+        ]
+        return {
+            "tick": self.state.tick,
+            "agent_id": agent.entity_id,
+            "state": {
+                "stress": round(agent.emotions.stress, 3),
+                "fear": round(agent.emotions.fear, 3),
+                "pain": round(agent.emotions.pain, 3),
+                "energy": round(agent.emotions.energy, 3),
+                "aggression": round(agent.emotions.aggression, 3),
+            },
+            "base_intents": intents,
+            "perceptions": top_perceptions,
+            "world": {
+                "width": self.config.world_width,
+                "height": self.config.world_height,
+            },
+        }
+
     def _decide(self, perceptions_map: dict[int, List[Perception]], decisions: dict[int, Decision]) -> None:
         for agent in self.state.agents:
-            decisions[agent.entity_id] = self.decision_strategy.decide(
-                agent, perceptions_map.get(agent.entity_id, [])
-            )
+            base_decision = self.decision_strategy.decide(agent, perceptions_map.get(agent.entity_id, []))
+            decisions[agent.entity_id] = self._resolve_llm_decision(agent, base_decision)
+
+    def _resolve_llm_decision(self, agent: Agent, base: Decision) -> Decision:
+        if not self.config.llm_enabled or not agent.llm.enabled:
+            return base
+        raw = agent.llm.decision
+        if raw is None:
+            return base
+        if self.state.tick > agent.llm.decision_expires_tick:
+            agent.llm.decision = None
+            return base
+        intent = str(raw.get("intent", "")).strip().lower()
+        confidence = float(raw.get("confidence", 0.0))
+        if intent not in ALLOWED_INTENTS or confidence < self.config.llm_min_confidence:
+            return base
+        target = raw.get("target")
+        target_position: Vec2 | None = None
+        if isinstance(target, dict) and "x" in target and "y" in target:
+            try:
+                target_position = Vec2(float(target["x"]), float(target["y"])).clamp(
+                    0,
+                    self.config.world_width,
+                    0,
+                    self.config.world_height,
+                )
+            except (TypeError, ValueError):
+                target_position = None
+        agent.current_intent = intent
+        self.state.llm_used += 1
+        return Decision(intent=intent, target_position=target_position)
+
+    def set_agent_llm_enabled(self, agent_id: int, enabled: bool) -> None:
+        agent = self._agent_by_id(agent_id)
+        if agent is None:
+            return
+        agent.llm.enabled = enabled
+        if not enabled:
+            if agent.llm.pending_request_id:
+                self.llm_broker.cancel_agent(agent.entity_id)
+            agent.llm.pending_request_id = None
+            agent.llm.thinking_state = "idle"
+            agent.llm.decision = None
+
+    def set_global_llm_enabled(self, enabled: bool) -> None:
+        self.config = type(self.config)(**{**self.config.__dict__, "llm_enabled": enabled})
+
+    def _agent_by_id(self, agent_id: int) -> Agent | None:
+        for agent in self.state.agents:
+            if agent.entity_id == agent_id:
+                return agent
+        return None
 
     def _act(self, decisions: dict[int, Decision]) -> None:
         for agent in self.state.agents:

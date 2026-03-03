@@ -34,7 +34,7 @@ class SimulationConfig:
     llm_enabled: bool = False
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "llama3.2:1b"
-    llm_timeout_seconds: float = 1.2
+    llm_timeout_seconds: float = 8.0
     llm_temperature: float = 0.1
     llm_max_inflight: int = 3
     llm_cooldown_ticks: int = 20

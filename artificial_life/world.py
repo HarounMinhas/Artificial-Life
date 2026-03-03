@@ -296,8 +296,7 @@ class World:
             agent.llm.decision = None
             return base
         intent = self._normalize_llm_intent(raw.get("intent"))
-        confidence = self._llm_confidence(raw)
-        if intent not in ALLOWED_INTENTS or confidence < self.config.llm_min_confidence:
+        if intent not in ALLOWED_INTENTS:
             return base
         target = raw.get("target")
         target_position: Vec2 | None = None

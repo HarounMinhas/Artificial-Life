@@ -47,6 +47,11 @@ class SimulationGUI:
         self.details_canvas: tk.Canvas | None = None
         self.details_list_frame: tk.Frame | None = None
         self._detail_rows: dict[int, tk.BooleanVar] = {}
+        self._detail_cards: dict[int, tk.LabelFrame] = {}
+        self._detail_llm_labels: dict[int, tk.Label] = {}
+        self._detail_status_labels: dict[int, tk.Label] = {}
+        self._detail_llm_prompt_boxes: dict[int, tk.Text] = {}
+        self._detail_llm_response_boxes: dict[int, tk.Text] = {}
 
         self._build_controls()
 
@@ -226,10 +231,9 @@ class SimulationGUI:
         selected = self._selected_agent()
         if selected is not None:
             info = (
-                f"Selected {selected.entity_id} | intent={selected.current_intent} | "
-                f"energy={selected.emotions.energy:.2f} stress={selected.emotions.stress:.2f} "
-                f"fear={selected.emotions.fear:.2f} aggr={selected.emotions.aggression:.2f} hp={selected.hp:.2f} "
-                f"| llm={selected.llm.enabled} state={selected.llm.thinking_state}"
+                f"Selected {selected.entity_id} | intent={selected.current_intent} | hp={selected.hp:.2f} | "
+                f"energy={selected.emotions.energy:.2f} stress={selected.emotions.stress:.2f} fear={selected.emotions.fear:.2f} "
+                f"| llm={selected.llm.enabled} ({selected.llm.thinking_state})"
             )
             self.canvas.create_text(10, 50, anchor="nw", fill="#F8D66D", text=info, font=("Consolas", 10))
 
@@ -250,6 +254,11 @@ class SimulationGUI:
             self.details_canvas = None
             self.details_list_frame = None
             self._detail_rows.clear()
+            self._detail_cards.clear()
+            self._detail_llm_labels.clear()
+            self._detail_status_labels.clear()
+            self._detail_llm_prompt_boxes.clear()
+            self._detail_llm_response_boxes.clear()
             return
 
         if self.details_window is None or not self.details_window.winfo_exists():
@@ -258,11 +267,9 @@ class SimulationGUI:
         if self.details_list_frame is None or self.details_canvas is None:
             return
 
-        for child in self.details_list_frame.winfo_children():
-            child.destroy()
-
-        row = 0
-        for agent in sorted(self.world.state.agents, key=lambda a: a.entity_id):
+        active_ids: set[int] = set()
+        for row, agent in enumerate(sorted(self.world.state.agents, key=lambda a: a.entity_id)):
+            active_ids.add(agent.entity_id)
             var = self._detail_rows.get(agent.entity_id)
             if var is None:
                 var = tk.BooleanVar(value=agent.llm.enabled)
@@ -270,72 +277,97 @@ class SimulationGUI:
             else:
                 var.set(agent.llm.enabled)
 
-            card = tk.LabelFrame(
-                self.details_list_frame,
-                text=f"Agent #{agent.entity_id}",
-                bg="#111621",
-                fg="#DCE6F7",
-                padx=6,
-                pady=6,
-                labelanchor="nw",
-            )
-            card.grid(row=row, column=0, sticky="ew", padx=8, pady=6)
-            card.columnconfigure(0, weight=1)
+            card = self._detail_cards.get(agent.entity_id)
+            if card is None or not card.winfo_exists():
+                card = tk.LabelFrame(
+                    self.details_list_frame,
+                    text=f"Agent #{agent.entity_id}",
+                    bg="#111621",
+                    fg="#DCE6F7",
+                    padx=6,
+                    pady=6,
+                    labelanchor="nw",
+                )
+                card.columnconfigure(0, weight=1)
 
-            ttk.Checkbutton(
-                card,
-                text="LLM aan voor agent",
-                variable=var,
-                command=lambda aid=agent.entity_id, v=var: self.world.set_agent_llm_enabled(aid, v.get()),
-            ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+                ttk.Checkbutton(
+                    card,
+                    text="LLM aan voor agent",
+                    variable=var,
+                    command=lambda aid=agent.entity_id, v=var: self.world.set_agent_llm_enabled(aid, v.get()),
+                ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+
+                llm_label = tk.Label(card, bg="#111621", fg="#9FD0FF", anchor="w", justify="left")
+                llm_label.grid(row=1, column=0, sticky="ew", pady=(0, 4))
+                self._detail_llm_labels[agent.entity_id] = llm_label
+
+                status_label = tk.Label(card, bg="#111621", fg="#E4EAF3", anchor="w", justify="left")
+                status_label.grid(row=2, column=0, sticky="ew", pady=(0, 4))
+                self._detail_status_labels[agent.entity_id] = status_label
+
+                llm_box = tk.LabelFrame(
+                    card,
+                    text="LLM prompt/response",
+                    bg="#101725",
+                    fg="#DCE6F7",
+                    padx=6,
+                    pady=6,
+                )
+                llm_box.grid(row=3, column=0, sticky="ew")
+                llm_box.columnconfigure(0, weight=1)
+
+                tk.Label(llm_box, text="Prompt", bg="#101725", fg="#A8BEDD", anchor="w").grid(row=0, column=0, sticky="w")
+                prompt_text = tk.Text(llm_box, height=4, wrap="word", bg="#0A0F19", fg="#E8EEF9", insertbackground="#E8EEF9")
+                prompt_text.grid(row=1, column=0, sticky="ew", pady=(0, 4))
+                prompt_text.configure(state="disabled")
+                self._detail_llm_prompt_boxes[agent.entity_id] = prompt_text
+
+                tk.Label(llm_box, text="Response", bg="#101725", fg="#A8BEDD", anchor="w").grid(row=2, column=0, sticky="w")
+                response_text = tk.Text(llm_box, height=4, wrap="word", bg="#0A0F19", fg="#E8EEF9", insertbackground="#E8EEF9")
+                response_text.grid(row=3, column=0, sticky="ew")
+                response_text.configure(state="disabled")
+                self._detail_llm_response_boxes[agent.entity_id] = response_text
+
+                self._detail_cards[agent.entity_id] = card
+
+            card.grid(row=row, column=0, sticky="ew", padx=8, pady=6)
 
             llm_line = (
                 f"llm_state={agent.llm.thinking_state}, pending={agent.llm.pending_request_id}, "
                 f"last_error={agent.llm.last_error or '-'}"
             )
-            tk.Label(card, text=llm_line, bg="#111621", fg="#9FD0FF", anchor="w", justify="left").grid(
-                row=1,
-                column=0,
-                sticky="ew",
-            )
+            self._detail_llm_labels[agent.entity_id].configure(text=llm_line)
 
-            status = "angstig" if agent.emotions.fear > 1.2 else "kalm"
-            if agent.current_intent == "eat":
-                status = "zoeken naar eten"
-            elif agent.current_intent == "attack":
-                status = "aanvallen"
-            elif agent.current_intent == "flee":
-                status = "vluchten"
-            elif agent.current_intent == "freeze":
-                status = "bevroren"
-
-            lines = [
-                f"status={status} intent={agent.current_intent} hp={agent.hp:.2f}",
-                (
-                    "emoties: "
-                    f"energy={agent.emotions.energy:.2f}, stress={agent.emotions.stress:.2f}, fear={agent.emotions.fear:.2f}, "
-                    f"pain={agent.emotions.pain:.2f}, aggression={agent.emotions.aggression:.2f}, overload={agent.emotions.stimulus_overload:.2f}"
-                ),
-                (
-                    "beweging: "
-                    f"pos=({agent.position.x:.1f}, {agent.position.y:.1f}), heading={agent.heading:.2f}, "
-                    f"speed={agent.speed:.2f}/{agent.max_speed:.2f}, frozen_ticks={agent.frozen_ticks}"
-                ),
-                (
-                    "territory: "
-                    f"center=({agent.territory.center.x:.1f}, {agent.territory.center.y:.1f}), "
-                    f"radius={agent.territory.radius:.1f}, strength={agent.territory.strength:.2f}"
-                ),
-            ]
-            tk.Label(card, text="\n".join(lines), bg="#111621", fg="#E4EAF3", anchor="w", justify="left").grid(
-                row=2,
-                column=0,
-                sticky="ew",
+            status_line = (
+                f"intent={agent.current_intent} | hp={agent.hp:.2f} | energy={agent.emotions.energy:.2f} | "
+                f"stress={agent.emotions.stress:.2f} | fear={agent.emotions.fear:.2f} | aggr={agent.emotions.aggression:.2f}"
             )
-            row += 1
+            self._detail_status_labels[agent.entity_id].configure(text=status_line)
+            self._set_text_widget(self._detail_llm_prompt_boxes[agent.entity_id], agent.llm.last_prompt)
+            self._set_text_widget(self._detail_llm_response_boxes[agent.entity_id], agent.llm.last_raw_response)
+
+        stale_ids = [aid for aid in self._detail_cards if aid not in active_ids]
+        for agent_id in stale_ids:
+            self._detail_cards[agent_id].destroy()
+            self._detail_cards.pop(agent_id, None)
+            self._detail_rows.pop(agent_id, None)
+            self._detail_llm_labels.pop(agent_id, None)
+            self._detail_status_labels.pop(agent_id, None)
+            self._detail_llm_prompt_boxes.pop(agent_id, None)
+            self._detail_llm_response_boxes.pop(agent_id, None)
 
         self.details_canvas.update_idletasks()
         self.details_canvas.configure(scrollregion=self.details_canvas.bbox("all"))
+
+    def _set_text_widget(self, widget: tk.Text, value: str) -> None:
+        next_text = value.strip() if value.strip() else "-"
+        current_text = widget.get("1.0", "end-1c")
+        if current_text == next_text:
+            return
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", next_text)
+        widget.configure(state="disabled")
 
     def _create_details_window(self) -> None:
         self.details_window = tk.Toplevel(self.root)

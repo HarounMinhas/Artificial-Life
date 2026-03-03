@@ -194,6 +194,7 @@ class World:
             return
         agent.llm.pending_request_id = None
         agent.llm.thinking_state = "idle"
+        agent.llm.last_prompt = result.prompt
         agent.llm.last_raw_response = result.raw_response
         self.state.llm_completed += 1
         if result.error:

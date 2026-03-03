@@ -15,6 +15,7 @@ class LLMDecisionResponse:
     request_id: str
     agent_id: int
     decision: dict[str, Any] | None
+    prompt: str
     raw_response: str
     error: str | None = None
 
@@ -95,7 +96,7 @@ class AsyncLLMDecisionBroker:
         self.prompt_builder = OllamaPromptBuilder()
         self.client = OllamaClient(config, parser=LLMJSONParser())
         self.executor = ThreadPoolExecutor(max_workers=max(1, config.llm_max_inflight))
-        self.inflight: dict[str, tuple[int, Future[tuple[dict[str, Any] | None, str, str | None]]]] = {}
+        self.inflight: dict[str, tuple[int, str, Future[tuple[dict[str, Any] | None, str, str | None]]]] = {}
         self._seq = 0
 
     def can_submit(self) -> bool:
@@ -108,12 +109,12 @@ class AsyncLLMDecisionBroker:
         self._seq += 1
         prompt = self.prompt_builder.build(payload)
         future = self.executor.submit(self.client.request_decision, prompt)
-        self.inflight[request_id] = (agent_id, future)
+        self.inflight[request_id] = (agent_id, prompt, future)
         return request_id
 
     def collect_ready(self) -> list[LLMDecisionResponse]:
         ready: list[LLMDecisionResponse] = []
-        for request_id, (agent_id, future) in list(self.inflight.items()):
+        for request_id, (agent_id, prompt, future) in list(self.inflight.items()):
             if not future.done():
                 continue
             self.inflight.pop(request_id, None)
@@ -129,6 +130,7 @@ class AsyncLLMDecisionBroker:
                     request_id=request_id,
                     agent_id=agent_id,
                     decision=decision,
+                    prompt=prompt,
                     raw_response=raw,
                     error=err,
                 )
@@ -136,7 +138,7 @@ class AsyncLLMDecisionBroker:
         return ready
 
     def cancel_agent(self, agent_id: int) -> None:
-        for request_id, (owner_id, future) in list(self.inflight.items()):
+        for request_id, (owner_id, _prompt, future) in list(self.inflight.items()):
             if owner_id != agent_id:
                 continue
             future.cancel()

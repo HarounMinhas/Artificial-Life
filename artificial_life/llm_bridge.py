@@ -27,8 +27,13 @@ class OllamaPromptBuilder:
             "Je bent een beslis-module voor een artificieel wezen.\n"
             "Geef ALLEEN een geldige JSON object terug, zonder markdown of extra tekst.\n"
             "Toegestane intent: eat, attack, flee, freeze, patrol, rest.\n"
+            "Parameter-uitleg: hp=gezondheid (0 dood, hoger is robuuster; NIET aanpassen), "
+            "energy=uithouding (laag maakt rust/eet logischer), stress=mentale druk (hoog verhoogt "
+            "kans op vlucht/freeze), fear=ervaren dreiging (hoog stimuleert flee/vermijding), "
+            "aggr/aggression=aanvalsdrang (hoog stimuleert attack).\n"
             "Gebruik exact dit schema: "
-            "{\"intent\":\"...\",\"confidence\":0.0,\"ttl_ticks\":1,\"target\":{\"x\":0.0,\"y\":0.0} of null,\"reason\":\"kort\"}.\n"
+            "{\"intent\":\"...\",\"confidence\":0.0,\"ttl_ticks\":1,\"target\":{\"x\":0.0,\"y\":0.0} of null,\"stress\":0.0,\"fear\":0.0,\"aggr\":0.0,\"reason\":\"kort\"}.\n"
+            "Geef altijd intent + stress + fear + aggr/aggression terug op basis van de inputstaat; hp mag niet veranderen.\n"
             "INPUT_JSON=" + compact_payload
         )
 

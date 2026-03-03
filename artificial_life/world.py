@@ -282,10 +282,11 @@ class World:
 
     def _decide(self, perceptions_map: dict[int, List[Perception]], decisions: dict[int, Decision]) -> None:
         for agent in self.state.agents:
-            base_decision = self.decision_strategy.decide(agent, perceptions_map.get(agent.entity_id, []))
-            decisions[agent.entity_id] = self._resolve_llm_decision(agent, base_decision)
+            perceptions = perceptions_map.get(agent.entity_id, [])
+            base_decision = self.decision_strategy.decide(agent, perceptions)
+            decisions[agent.entity_id] = self._resolve_llm_decision(agent, base_decision, perceptions)
 
-    def _resolve_llm_decision(self, agent: Agent, base: Decision) -> Decision:
+    def _resolve_llm_decision(self, agent: Agent, base: Decision, perceptions: list[Perception]) -> Decision:
         if not agent.llm.enabled:
             return base
         raw = agent.llm.decision
@@ -294,8 +295,8 @@ class World:
         if self.state.tick > agent.llm.decision_expires_tick:
             agent.llm.decision = None
             return base
-        intent = str(raw.get("intent", "")).strip().lower()
-        confidence = float(raw.get("confidence", 0.0))
+        intent = self._normalize_llm_intent(raw.get("intent"))
+        confidence = self._safe_float(raw.get("confidence"), default=0.0)
         if intent not in ALLOWED_INTENTS or confidence < self.config.llm_min_confidence:
             return base
         target = raw.get("target")
@@ -310,9 +311,47 @@ class World:
                 )
             except (TypeError, ValueError):
                 target_position = None
+        if target_position is None:
+            target_position = self._target_from_perception(intent, perceptions)
+        if target_position is None and base.intent == intent:
+            target_position = base.target_position
         agent.current_intent = intent
         self.state.llm_used += 1
         return Decision(intent=intent, target_position=target_position)
+
+    def _normalize_llm_intent(self, raw_intent: object) -> str:
+        intent = str(raw_intent or "").strip().lower()
+        aliases = {
+            "fight": "attack",
+            "combat": "attack",
+            "hunt": "attack",
+            "run": "flee",
+            "escape": "flee",
+            "food": "eat",
+        }
+        return aliases.get(intent, intent)
+
+    def _safe_float(self, value: object, default: float) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _target_from_perception(self, intent: str, perceptions: list[Perception]) -> Vec2 | None:
+        if intent == "eat":
+            source_type = EntityType.FOOD.value
+        elif intent in {"attack", "flee"}:
+            source_type = EntityType.AGENT.value
+        else:
+            return None
+        options = [
+            p
+            for p in perceptions
+            if p.source_type == source_type and p.estimated_position is not None
+        ]
+        if not options:
+            return None
+        return min(options, key=lambda p: p.estimated_distance).estimated_position
 
     def _agent_llm_default_enabled(self) -> bool:
         return self.config.llm_enabled

@@ -53,48 +53,41 @@ class World:
         self.emotion_strategy = BasicEmotionStrategy()
         self.decision_strategy = ScoreBasedDecisionStrategy(config, self.rng)
         self.action_strategy = MovementActionStrategy(self.rng)
+        self._next_agent_id = 0
+        self._next_food_id = 1000
 
     def seed(self, agent_count: int = 10, food_count: int = 20) -> None:
         self.state = WorldState()
+        self._next_agent_id = 0
+        self._next_food_id = 1000
         self.state.agents = [
-            Agent(
-                entity_id=i,
-                entity_type=EntityType.AGENT,
-                position=self._random_position(),
-                heading=self.rng.uniform(-math.pi, math.pi),
-                speed=self.rng.uniform(0.2, 1.0),
-                max_speed=self.config.max_speed,
-                turn_rate_deg=self.config.max_turn_deg,
-                territory=Territory(
-                    center=self._random_position(),
-                    radius=self.rng.uniform(60.0, 120.0),
-                    strength=self.rng.uniform(0.3, 0.7),
-                ),
-                bias_fight=self.rng.uniform(0.2, 0.4),
-                bias_flight=self.rng.uniform(0.2, 0.4),
-                bias_freeze=self.rng.uniform(0.2, 0.4),
-            )
-            for i in range(agent_count)
+            self._new_agent(self._random_position())
+            for _ in range(agent_count)
         ]
         self.state.foods = [
             Food(
-                entity_id=1000 + i,
+                entity_id=self._new_food_id(),
                 entity_type=EntityType.FOOD,
                 position=self._random_position(),
                 energy=self.config.food_energy,
             )
-            for i in range(food_count)
+            for _ in range(food_count)
         ]
 
     def spawn_food(self, position: Vec2 | None = None) -> None:
         self.state.foods.append(
             Food(
-                entity_id=1000 + self.state.tick + len(self.state.foods),
+                entity_id=self._new_food_id(),
                 entity_type=EntityType.FOOD,
                 position=position or self._random_position(),
                 energy=self.config.food_energy,
             )
         )
+
+    def spawn_agent(self, position: Vec2 | None = None) -> Agent:
+        agent = self._new_agent(position or self._random_position())
+        self.state.agents.append(agent)
+        return agent
 
     def tick(self) -> None:
         self.state.tick += 1
@@ -321,3 +314,29 @@ class World:
             self.rng.uniform(10.0, self.config.world_width - 10.0),
             self.rng.uniform(10.0, self.config.world_height - 10.0),
         )
+
+    def _new_agent(self, position: Vec2) -> Agent:
+        agent = Agent(
+            entity_id=self._next_agent_id,
+            entity_type=EntityType.AGENT,
+            position=position,
+            heading=self.rng.uniform(-math.pi, math.pi),
+            speed=self.rng.uniform(0.2, 1.0),
+            max_speed=self.config.max_speed,
+            turn_rate_deg=self.config.max_turn_deg,
+            territory=Territory(
+                center=self._random_position(),
+                radius=self.rng.uniform(60.0, 120.0),
+                strength=self.rng.uniform(0.3, 0.7),
+            ),
+            bias_fight=self.rng.uniform(0.2, 0.4),
+            bias_flight=self.rng.uniform(0.2, 0.4),
+            bias_freeze=self.rng.uniform(0.2, 0.4),
+        )
+        self._next_agent_id += 1
+        return agent
+
+    def _new_food_id(self) -> int:
+        food_id = self._next_food_id
+        self._next_food_id += 1
+        return food_id

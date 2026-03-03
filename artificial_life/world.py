@@ -289,14 +289,14 @@ class World:
     def _resolve_llm_decision(self, agent: Agent, base: Decision, perceptions: list[Perception]) -> Decision:
         if not agent.llm.enabled:
             return base
-        raw = agent.llm.decision
+        raw = self._extract_llm_decision(agent.llm.decision)
         if raw is None:
             return base
         if self.state.tick > agent.llm.decision_expires_tick:
             agent.llm.decision = None
             return base
         intent = self._normalize_llm_intent(raw.get("intent"))
-        confidence = self._safe_float(raw.get("confidence"), default=0.0)
+        confidence = self._llm_confidence(raw)
         if intent not in ALLOWED_INTENTS or confidence < self.config.llm_min_confidence:
             return base
         target = raw.get("target")
@@ -319,6 +319,23 @@ class World:
         self.state.llm_used += 1
         return Decision(intent=intent, target_position=target_position)
 
+    def _extract_llm_decision(self, decision: object) -> dict | None:
+        if not isinstance(decision, dict):
+            return None
+        if "intent" in decision:
+            return decision
+        nested = decision.get("decision")
+        if isinstance(nested, dict):
+            return nested
+        return decision
+
+    def _llm_confidence(self, raw: dict) -> float:
+        if "confidence" in raw:
+            return self._safe_float(raw.get("confidence"), default=0.0)
+        if "score" in raw:
+            return self._safe_float(raw.get("score"), default=0.0)
+        return 1.0 if self._normalize_llm_intent(raw.get("intent")) in ALLOWED_INTENTS else 0.0
+
     def _normalize_llm_intent(self, raw_intent: object) -> str:
         intent = str(raw_intent or "").strip().lower()
         aliases = {
@@ -327,7 +344,12 @@ class World:
             "hunt": "attack",
             "run": "flee",
             "escape": "flee",
+            "retreat": "flee",
             "food": "eat",
+            "consume": "eat",
+            "hold": "freeze",
+            "wait": "rest",
+            "idle": "rest",
         }
         return aliases.get(intent, intent)
 

@@ -20,12 +20,13 @@ class SimulationGUI:
         self.inspect_mode = False
         self.paused = False
         self.selected_agent_id: int | None = None
-        self.global_llm_enabled = tk.BooleanVar(value=self.config.llm_enabled)
 
         self.root = tk.Tk()
         self.root.title("Artificial Life V1")
         self.root.geometry("1250x820")
         self.root.minsize(980, 680)
+
+        self.global_llm_enabled = tk.BooleanVar(master=self.root, value=self.config.llm_enabled)
 
         self.controls_frame = tk.Frame(self.root, bg="#1A1F2B", padx=12, pady=12)
         self.controls_frame.pack(fill="x")

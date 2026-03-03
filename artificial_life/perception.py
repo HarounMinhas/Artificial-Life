@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 from .math_utils import Vec2
 
@@ -16,7 +15,9 @@ class PerceptionType(str, Enum):
 class Perception:
     perception_type: PerceptionType
     source_type: str
-    estimated_position: Optional[Vec2]
+    source_id: int
+    estimated_position: Vec2 | None
     estimated_distance: float
     intensity: float
     threat: float
+    signal: str = ""

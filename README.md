@@ -9,8 +9,20 @@ of te testen zijn.
 
 ### Run (headless)
 ```bash
-python -m artificial_life.runner
+python -m artificial_life.runner --mode headless --ticks 300
 ```
+
+### Run (GUI)
+```bash
+python -m artificial_life.runner --mode gui
+```
+
+GUI input:
+- Linkermuisklik: voedsel plaatsen of agent selecteren
+- `D`: debug overlays aan/uit
+- `R`: reset wereld
+- `Space`: pauze
+- `S`: stap 1 tick (wanneer gepauzeerd)
 
 ### Starten in Visual Studio Code (stap voor stap, terminal)
 1. Open de repo in VS Code:
@@ -69,16 +81,16 @@ statusregels in de terminal. Zie je geen regels?
   python -m artificial_life.runner
   ```
 
-### Wat ontbreekt of nog niet werkt voor V1 (code-check)
-Op basis van de huidige code zijn dit de grootste gaps t.o.v. de V1-brainstorm:
-- **Zicht, tast aanwezig** maar **gehoor en reuk ontbreken** (geen auditieve/olfactorische percepties).
-- **Fight/flight/freeze**: alleen `flee`, `attack`, `rest` en `patrol` zijn aanwezig; geen echte freeze-logica.
-- **Schade & pijn**: er is geen damage-model of pijn-opbouw bij botsing/aanval.
-- **Territorium**: enkel stress-reductie binnen eigen territorium; geen markeren of indringer-effects.
-- **Sociale interactie/communicatie** ontbreekt volledig.
-- **Leren/associaties** is niet geactiveerd (memory bestaat maar wordt niet gevuld/afgebouwd).
-- **Dood** en bijbehorende effecten ontbreken.
-- **Debug/visualisatie** is nog niet gestart; er is geen UI, overlays of input (muisklik/keys).
+### Status V1-implementatie (code-check)
+De resterende kernfeatures zijn nu toegevoegd:
+- **Perceptie**: zicht + tast + **gehoor** + **reuk** met ruis en prioritering.
+- **Fight/flight/freeze**: alle drie acties zijn actief in de score-based beslisser.
+- **Schade & pijn**: aanvalsschade, pijn-opbouw, en verval over tijd.
+- **Territorium**: stressreductie in eigen gebied + indringerstress + territoriumsterkte-effect.
+- **Sociale interactie/communicatie**: basisrelaties (trust/fear), danger/food/death signalen via geluid.
+- **Leren/associaties**: plaats- en entiteit-associaties met tijdsverval.
+- **Dood-events**: agent verwijdering + death smell/sound + impact op andere agents.
+- **GUI/visualisatie**: realtime Tkinter-weergave met debug overlays en input-controls.
 
 # Versie 1 — Core mechanics brainstorm
 

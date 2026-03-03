@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 from .math_utils import Vec2
 
@@ -31,6 +30,12 @@ class Territory:
 
 
 @dataclass
+class SocialBond:
+    trust: float = 0.0
+    fear: float = 0.0
+
+
+@dataclass
 class EmotionState:
     stress: float = 0.0
     fear: float = 0.0
@@ -42,8 +47,9 @@ class EmotionState:
 
 @dataclass
 class MemoryAssociation:
-    place_emotion: Optional[Vec2] = None
-    intensity: float = 0.0
+    place_emotion: Vec2 = field(default_factory=lambda: Vec2(0, 0))
+    place_intensity: float = 0.0
+    entity_emotions: dict[int, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -58,4 +64,8 @@ class Agent(Entity):
     bias_flight: float = 0.33
     bias_freeze: float = 0.34
     memory: MemoryAssociation = field(default_factory=MemoryAssociation)
-    current_intent: Optional[str] = None
+    relationships: dict[int, SocialBond] = field(default_factory=dict)
+    current_intent: str | None = None
+    hp: float = 10.0
+    frozen_ticks: int = 0
+    alive: bool = True
